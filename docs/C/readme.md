@@ -4,9 +4,9 @@
 	
 <div>
 <img src="pics/speed_display_proto.webp" />
-<br>Prototype vehicle speed display</div>
+<br><em>Prototype vehicle speed display</em></div>
 
-
+<br>
 <p>This project describes the creation of the software for a vehicle speedometer. It measures the frequency of a signal that is proportional to speed, but I&#8217;m also using the opportunity to explore two possible techniques for measuring frequency with high accuracy using an RP2040 processor.</p>
 
 
