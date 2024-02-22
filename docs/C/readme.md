@@ -388,7 +388,7 @@ while (true)
 <p>To build and run the code, I have included a minimal CMakeLists.txt, the only addition being the enabling of all warnings:</p>
 
 
-```C++
+```CMake
 cmake_minimum_required(VERSION 3.12)
 include(pico_sdk_import.cmake)
 project(picofreq C CXX ASM)
