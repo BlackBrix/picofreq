@@ -237,7 +237,7 @@ print("Sleep 1.0s, ext count %u" % val)
 <p>A typical response is:</p>
 
 
-```python
+```
 Sleep 1.0s, ext count 100011
 ```
 
@@ -313,7 +313,7 @@ def freq_gate_start(ctr, gate, dma):
 <p>If all is well, the test signal frequency should be reported correctly on the console:</p>
 
 
-```python
+```
 Gate 250.0 ms, count 25000, freq 100.0 kHz
 ```
 
@@ -413,7 +413,7 @@ print("%u samples, total %u us, freq %3.1f Hz" % (count, total, freq))
 <p>The frequency of the test signal should be displayed on the console:</p>
 
 
-```python
+```
 9 samples, total 800000 us, freq 10.0 Hz
 ```
 
