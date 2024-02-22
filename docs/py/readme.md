@@ -21,36 +21,36 @@
 <p>This approach produced excellent results, but wasn&#8217;t very &#8216;pythonic&#8217;, so I&#8217;ve encapsulated common API functions in Python classes; when choosing function names, I&#8217;ve copied those in the C API when possible. So for example, setting the PWM peripheral in C is:</p>
 
 
-<div><pre>
+```C++
 #define PWM_GPIO_PIN 3
 uint slice = pwm_gpio_to_slice_num(PWM_GPIO_PIN);
 pwm_config cfg = pwm_get_default_config();
 pwm_config_set_clkdiv_mode(&cfg, PWM_DIV_B_RISING);
 // ..and any other settings, then..
 pwm_init(slice, &cfg, false);
-</pre></div>
+```
 
 
 <p>In MicroPython this is done by instantiating a device from the PWM class:</p>
 
 
-<div><pre>
+```python
 import pico_devices as devs
 PWM_GPIO_PIN = 3
 pwm = devs.PWM(PWM_GPIO_PIN)
 pwm.set_clkdiv_mode(devs.PWM_DIV_B_RISING)
 # ..and any other settings..
-</pre></div>
+```
 
 
 <p>Not only are the function call names very similar between C and Python, but also the underlying code is similar; for example, the set_clkdiv function is defined as:</p>
 
 
-<div><pre>
+```python
 class PWM:
     def set_clkdiv_mode(self, mode):
         self.slice.CSR.DIVMODE = mode
-</pre></div>
+```
 
 
 <p>where &#8216;slice&#8217; is the (somewhat unusual) name for a PWM channel, CSR is the Control and Status Register, and DIVMODE is a 2-bit field within that register. If you want to learn more about the internal structure of the PWM peripheral, I suggest you take a look at the  <a href="https://iosoft.blog/picofreq">C language post</a>.</p>
@@ -68,7 +68,7 @@ class PWM:
 <p>We need a waveform for the tests, which the RP2040 PWM peripherals can easily provide. The following code generates a 100 kHz square wave on GPIO pin 4:</p>
 
 
-<div><pre>
+```python
 PWM_OUT_PIN = 4             # GPIO pin for output
 PWM_DIV = 125               # 125e6 / 125 = 1 MHz
 PWM_WRAP = 9                # 1 MHz / (9 + 1) = 100 kHz
@@ -85,7 +85,7 @@ def pwm_out(pin, div, level, wrap):
     return pwm
 
 test_signal = pwm_out(PWM_OUT_PIN, PWM_DIV, PWM_LEVEL, PWM_WRAP)
-</pre></div>
+```
 
 
 <p>The choice of GPIO pin number is quite arbitrary, you just need to be aware when programming PWM that there are are 16 channels (technically 8 slices, each with 2 channels) mapped onto 32 pins, so if I&#8217;m using GPIO pin 4 for this signal, I can&#8217;t use PWM on GPIO 20. However, that pin is still available for any other purpose, so the limitation usually isn&#8217;t a problem.</p>
@@ -106,7 +106,7 @@ test_signal = pwm_out(PWM_OUT_PIN, PWM_DIV, PWM_LEVEL, PWM_WRAP)
 <p>The code is quite simple; it is only necessary to set the mode, and the frequency divisor:</p>
 
 
-<div><pre>
+```python
 # Initialise PWM as a pulse counter (gpio must be odd number)
 def pulse_counter_init(pin, rising=True):
     devs.gpio_set_function(pin, devs.GPIO_FUNC_PWM)
@@ -114,13 +114,13 @@ def pulse_counter_init(pin, rising=True):
     ctr.set_clkdiv_mode(devs.PWM_DIV_B_RISING if rising else devs.PWM_DIV_B_FALLING)
     ctr.set_clkdiv(1)
     return ctr
-</pre></div>
+```
 
 
 <p>Now we can make a simple frequency meter, by clearing the count to zero, then enabling the counter for a specific period of time:</p>
 
 
-<div><pre>
+```python
 # Enable or disable pulse counter
 def pulse_counter_enable(ctr, en):
     if en:
@@ -136,7 +136,7 @@ time.sleep(0.1)
 pulse_counter_enable(counter, False)
 val = pulse_counter_value(counter)
 print("Sleep 0.1s, count %u" % val)
-</pre></div>
+```
 
 
 <p>The count-value for a 100 kHz signal and a 100 millisecond sleep is theoretically 10000, but is actually around 10015, due to the time-delays associated with the Python instructions. I&#8217;ll be describing ways to eliminate these delays later on in this post.</p>
@@ -158,27 +158,27 @@ print("Sleep 0.1s, count %u" % val)
 <p>This prompts the question &#8220;what data should the DMA transfer?&#8221; and the answer is &#8220;anything: it doesn&#8217;t matter&#8221;, but we still have to be careful to ensure the transfers don&#8217;t over-write some random area in memory. We need to very carefully specify the DMA source &amp; destination addresses, using the binary &#8216;array&#8217; data type, which occupies a fixed area of memory, without all the complexities of a Python &#8216;object&#8217;. The syntax to create the array is somewhat unusual; rather than just specifying a size, we have to provide the initial data using an iterator. The pico_devices library provides a helper function to simplify the process:</p>
 
 
-<div><pre>
+```python
 # Create 32-bit array (to receive DMA data)
 def array32(size):
     return array.array('I', (0 for _ in range(size)))
-</pre></div>
+```
 
 
 <p>To use this array with DMA, we have to get its address in memory, using &#8216;uctypes.addressof&#8217;:</p>
 
 
-<div><pre>
+```python
 # Get address of variable (for DMA)
 def addressof(var):
     return uctypes.addressof(var)
-</pre></div>
+```
 
 
 <p>Armed with these functions, we can initialise the DMA controller:</p>
 
 
-<div><pre>
+```python
 ext_data = devs.array32(1)  # Dummy array for extended counter
 
 # Use DMA to extend pulse counter to 32 bits
@@ -195,7 +195,7 @@ def pulse_counter_ext_init(ctr):
     ctr_dma.set_dreq(ctr.get_dreq())
     ctr.set_enabled(True)
     return ctr_dma
-</pre></div>
+```
 
 
 <p>We&#8217;re modifying the PWM 16-bit counter to wrap around to zero on every input edge, and initialising its starting value to zero, which is essential. Then a DMA channel is instantiated, and configured to copy 8 bits from the data array back to the data array.</p>
@@ -205,7 +205,7 @@ def pulse_counter_ext_init(ctr):
 <p>It is important to note that enabling the DMA counter does not necessarily start the transfer from scratch; if a transfer has already started, the controller will resume counting where it left off. So it is necessary to clear out any existing transfer, before stating a new one:</p>
 
 
-<div><pre>
+```python
 # Start the extended pulse counter
 def pulse_counter_ext_start(ctr_dma):
     ctr_dma.abort()
@@ -218,28 +218,28 @@ def pulse_counter_ext_stop(ctr_dma):
 # Return value from extended pulse counter
 def pulse_counter_ext_value(ctr_dma):
     return 0xffffffff - ctr_dma.get_trans_count()
-</pre></div>
+```
 
 
 <p>Using the extended pulse counter is similar to the 16-bit counter, we just need to remember the limitation that if the 32-bit value is exceeded, the counter will stop, and not wrap around.</p>
 
 
-<div><pre>
+```python
 counter_dma = pulse_counter_ext_init(counter)
 pulse_counter_ext_start(counter_dma)
 time.sleep(1.0)
 val = pulse_counter_ext_value(counter_dma)
 pulse_counter_ext_stop(counter_dma)
 print("Sleep 1.0s, ext count %u" % val)
-</pre></div>
+```
 
 
 <p>A typical response is:</p>
 
 
-<div><pre>
+```python
 Sleep 1.0s, ext count 100011
-</pre></div>
+```
 
 
 <p>This shows that the count is not limited to 16 bits.</p>
@@ -257,7 +257,7 @@ Sleep 1.0s, ext count 100011
 <p>This involves programming another PWM channel to act as a timer, then when the time has expired, using DMA to modify the counter&#8217;s register to stop counting. The default PWM clock is 125 MHz, the prescaler is 8 bits, and the counter register is 16 bits, effectively 17 bits if we engage &#8216;phase correct&#8217; mode. So the slowest gate frequency is 125e6 / (256 * 65536 * 2) = 3.725 Hz, a gate-time of 0.268 seconds; I&#8217;ve opted for 0.25 seconds.</p>
 
 
-<div><pre>
+```python
 GATE_TIMER_PIN = 0          # Used to define PWM slice
 GATE_PRESCALE = 250         # 125e6 / 250 = 500 kHz
 GATE_WRAP = 125000          # 500 kHz / 125000 = 4 Hz (250 ms)
@@ -270,7 +270,7 @@ def gate_timer_init(pin):
     pwm.set_chan_level(pwm.gpio_to_channel(pin), int(GATE_WRAP/4))
     pwm.set_phase_correct(True)
     return pwm
-</pre></div>
+```
 
 
 <p>This code uses GPIO pin 0 to identify which PWM &#8216;slice&#8217; is being used. Since we aren&#8217;t enabling PWM I/O on that pin, it can still be used for any other function, such as serial output.</p>
@@ -280,7 +280,7 @@ def gate_timer_init(pin):
 <p>We need to trigger a DMA cycle when the gate PWM times out; that cycle will be used to disable the counter PWM. So when initialising the DMA channel, we need to capture the non-enabled state, that will be written into the counter CSR register; this is only one 32-bit value, but I&#8217;m using a fixed array for that value, since DMA can&#8217;t handle the complexities of Python object storage.</p>
 
 
-<div><pre>
+```python
 gate_data = devs.array32(1)
 
 # Initialise gate timer DMA
@@ -294,28 +294,28 @@ def gate_dma_init(ctr, gate):
     dma.set_read_addr(devs.addressof(gate_data))
     dma.set_write_addr(ctr.get_csr_address())
     return dma
-</pre></div>
+```
 
 
 <p>To start the frequency measurement, it is necessary to set the DMA count (since this is reset by a DMA cycle), enable DMA, then enable the gate &amp; counter PWM devices simultaneously. </p>
 
 
-<div><pre>
+```python
 # Start frequency measurment using gate
 def freq_gate_start(ctr, gate, dma):
     ctr.set_ctr(0)
     gate.set_ctr(0)
     dma.set_trans_count(1, True)
     ctr.set_enables((1&lt;&lt;ctr.slice_num) | (1&lt;&lt;gate.slice_num), True)
-</pre></div>
+```
 
 
 <p>If all is well, the test signal frequency should be reported correctly on the console:</p>
 
 
-<div><pre>
+```python
 Gate 250.0 ms, count 25000, freq 100.0 kHz
-</pre></div>
+```
 
 
 <h2>Edge timer</h2>
@@ -336,16 +336,16 @@ Gate 250.0 ms, count 25000, freq 100.0 kHz
 <p>We&#8217;ll be generating a test signal as before, but this time it is 10 Hz:</p>
 
 
-<div><pre>
+```python
 PWM_DIV = 250               # 125e6 / 125 = 500 kHz
 PWM_WRAP = 50000 - 1        # 500 kHz / 50000 = 10 Hz
-</pre></div>
+```
 
 
 <p>The PWM peripheral initialisation is similar to previous functions:</p>
 
 
-<div><pre>
+```python
 # Initialise PWM as a timer (gpio must be odd number)
 def timer_init(pin, rising=True):
     devs.gpio_set_function(pin, devs.GPIO_FUNC_PWM)
@@ -354,13 +354,13 @@ def timer_init(pin, rising=True):
     pwm.set_clkdiv(1)
     pwm.set_wrap(0);
     return pwm
-</pre></div>
+```
 
 
 <p>The DMA controller is also similar, but the destination is set to auto-increment with every transfer:</p>
 
 
-<div><pre>
+```python
 # Initialise timer DMA
 def timer_dma_init(timer):
     dma = devs.DMA()
@@ -370,13 +370,13 @@ def timer_dma_init(timer):
     dma.set_dreq(timer.get_dreq())
     dma.set_read_addr(devs.TIMER_RAWL_ADDR)
     return dma
-</pre></div>
+```
 
 
 <p>Starting the DMA is a bit different; firstly we need to use the &#8216;abort&#8217; command to stop any previous transfer that might still be in progress. If we didn&#8217;t do that, and just enabled DMA, the transfer would resume where it left off &#8211; the new settings would be ignored. Secondly we need to set both the transfer count and the destination address, since these will have been changed by a previous transfer.</p>
 
 
-<div><pre>
+```python
 # Start frequency measurment using gate
 def timer_start(timer, dma):
     timer.set_ctr(0)
@@ -384,13 +384,13 @@ def timer_start(timer, dma):
     dma.abort()
     dma.set_write_addr(devs.addressof(time_data))
     dma.set_trans_count(NTIMES, True)
-</pre></div>
+```
 
 
 <p>The main program needs to perform some simple maths to derive the frequency, guarding against the possibility that there may be insufficient time-values (1 or less):</p>
 
 
-<div><pre>
+```python
 NTIMES = 9                       # Number of time samples
 time_data = devs.array32(NTIMES) # Time data
 
@@ -407,15 +407,15 @@ diffs = &#91;data&#91;n]-data&#91;n-1] for n in range(1, len(data))]
 total = sum(diffs)
 freq = (1e6 * len(diffs) / total) if total else 0
 print("%u samples, total %u us, freq %3.1f Hz" % (count, total, freq))
-</pre></div>
+```
 
 
 <p>The frequency of the test signal should be displayed on the console:</p>
 
 
-<div><pre>
+```python
 9 samples, total 800000 us, freq 10.0 Hz
-</pre></div>
+```
 
 
 <h2>Running the code</h2>
